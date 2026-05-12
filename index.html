@@ -222,7 +222,7 @@ function connectWSP2P() {
 connectWSP2P();
 
 // ===============================
-//  REST フォールバック
+//  REST フォールバック（1秒更新）
 // ===============================
 async function fallbackREST(){
   if(wsAlive) return;
@@ -237,11 +237,11 @@ async function fallbackREST(){
   }
 }
 
-// ★ 初回ロード時に必ず REST を実行
+// 初回ロード時に必ず REST を実行
 fallbackREST();
 
-// WS が死んでいる時だけ REST を使う
-setInterval(fallbackREST, 2000);
+// 1秒ごとに REST を実行（自動更新）
+setInterval(fallbackREST, 1000);
 
 // ===============================
 //  表示更新
