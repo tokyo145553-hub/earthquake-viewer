@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>地震情報ログ</title>
+<title>地震情報</title>
 
 <style>
 body{
@@ -76,12 +76,12 @@ margin-top:5px;
 
 <div id="container">
 
-<h1>地震情報（リアルタイム + 震度解析）</h1>
+<h1>地震情報（WS + API 同時取得）</h1>
 
 <div class="card">
 
 <button onclick="enableAutoCopy()">自動コピー</button>
-<button onclick="copyAll()">全件コピー</button>
+<button onclick="copyAll()">全コピー</button>
 
 <br>
 
@@ -92,7 +92,7 @@ margin-top:5px;
 <button onclick="setTsunami('warning')">警報</button>
 <button onclick="setTsunami('major')">大津波警報</button>
 
-<div id="status">WebSocket待機中...</div>
+<div id="status">起動中...</div>
 
 </div>
 
@@ -107,13 +107,14 @@ margin-top:5px;
 // =========================
 let AUTO_COPY = false;
 let lastHash = "";
+let lastId = null;
 
 let tsunamiMode = "auto";
 let tsunamiText = "取得中...";
 let tsunamiTimer = 0;
 
 // =========================
-// WebSocket（追加）
+// WebSocket
 // =========================
 let socket;
 let reconnectTimer;
@@ -126,14 +127,60 @@ socket.onopen = () => {
 document.getElementById("status").innerText = "WebSocket接続中";
 };
 
-socket.onmessage = async (e) => {
+socket.onmessage = (e) => {
 
 const q = JSON.parse(e.data);
 if(q.code !== 551) return;
 
-// ===== ここから完全に元ロジック維持 =====
+render(q);
+
+};
+
+socket.onclose = () => {
+document.getElementById("status").innerText = "再接続中...";
+reconnectTimer = setTimeout(connectWS,3000);
+};
+
+socket.onerror = () => socket.close();
+
+}
+
+// =========================
+// APIポーリング（併用）
+// =========================
+async function pollAPI(){
+
+try{
+
+const res = await fetch(
+"https://api.p2pquake.net/v2/history?codes=551&limit=1"
+);
+
+const data = await res.json();
+const q = data[0];
+
+if(!q) return;
+
+if(q.id === lastId) return;
+lastId = q.id;
+
+render(q);
+
+}catch(e){}
+
+}
+
+// =========================
+// 共通レンダリング
+// =========================
+function render(q){
+
 const eq = q.earthquake;
 const h = eq.hypocenter || {};
+
+// 重複保険
+if(q.id && q.id === lastId) return;
+lastId = q.id;
 
 let depth="不明";
 if(h.depth===0)depth="ごく浅い";
@@ -142,16 +189,21 @@ else if(h.depth!=null)depth=h.depth+"km";
 const maxRaw =
 q.points.reduce((m,p)=>Math.max(m,p.scale||0),0);
 
+const scaleMap={
+10:"1",20:"2",30:"3",40:"4",
+45:"5弱",50:"5強",55:"6弱",60:"6強",70:"7"
+};
+
 const intensity = buildIntensity(q.points);
 
-const scaleMap={10:"1",20:"2",30:"3",40:"4",45:"5弱",50:"5強",55:"6弱",60:"6強",70:"7"};
-
 let magStr =
-(typeof h.magnitude==="number") ? h.magnitude.toFixed(1) : "---";
+(typeof h.magnitude==="number")
+? h.magnitude.toFixed(1)
+: "---";
 
-// 津波更新制御（維持）
+// 津波更新
 if(Date.now()-tsunamiTimer>10000){
-await fetchTsunami();
+fetchTsunami();
 tsunamiTimer=Date.now();
 }
 
@@ -162,36 +214,23 @@ const text =
 "■ 震源地："+(h.name||"不明")+"\\n"+
 "■ 深さ："+depth+"\\n"+
 formatTimeBlock("発生時刻",eq.time)+"\\n"+
-formatTimeBlock("配信時刻",new Date())+"\\n\\n"+
+formatTimeBlock("取得時刻",new Date())+"\\n\\n"+
 "■ 津波情報\\n"+
 getTsunamiDisplay()+"\\n\\n"+
-"■ 出典\\n・P2P地震情報API\\n・気象庁\\n"+
-"--------------------\\n"+
-"■ 各地の震度\\n--------------------\\n\\n"+
+"■ 各地の震度\\n\n"+
 intensity;
 
-// 表示
 prepend(text);
 
-// 自動コピー
 if(AUTO_COPY && lastHash!==text){
 lastHash=text;
 navigator.clipboard.writeText(text);
 }
 
-};
-
-socket.onclose=()=>{
-document.getElementById("status").innerText="再接続中...";
-reconnectTimer=setTimeout(connectWS,3000);
-};
-
-socket.onerror=()=>socket.close();
-
 }
 
 // =========================
-// 表示追加
+// 表示
 // =========================
 function prepend(text){
 
@@ -199,7 +238,7 @@ const div=document.createElement("div");
 div.className="card";
 
 div.innerHTML=
-"<div class='title'>リアルタイム</div>"+
+"<div class='title'>地震情報</div>"+
 "<button onclick='copyOne(this)'>コピー</button>"+
 "<textarea readonly></textarea>";
 
@@ -209,7 +248,7 @@ document.getElementById("logs").prepend(div);
 }
 
 // =========================
-// 津波（完全維持）
+// 津波（維持）
 // =========================
 async function fetchTsunami(){
 try{
@@ -360,9 +399,10 @@ d.getHours()+"時"+String(d.getMinutes()).padStart(2,"0")+"分";
 }
 
 // =========================
-// 起動
+// 起動（WS + API同時）
 // =========================
 connectWS();
+setInterval(pollAPI, 1000);
 
 </script>
 
