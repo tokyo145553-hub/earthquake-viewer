@@ -12,25 +12,15 @@
   --card:#071427;
   --border:#1e3a5f;
   --neon:#38bdf8;
-  --neon2:#0ea5e9;
   --text:#e0f2fe;
-  --sub:#7dd3fc;
 }
 
 body{
   font-family:"Hiragino Sans","Segoe UI",sans-serif;
-  background:
-    radial-gradient(circle at top,
-      rgba(56,189,248,0.18),
-      transparent 35%),
-    radial-gradient(circle at bottom right,
-      rgba(14,165,233,0.15),
-      transparent 30%),
-    #020617;
+  background:#020617;
   color:var(--text);
   margin:0;
   padding:20px;
-  min-height:100vh;
 }
 
 #container{
@@ -39,80 +29,53 @@ body{
 }
 
 h1{
-  font-size:30px;
-  margin-bottom:20px;
-  font-weight:700;
   color:#7dd3fc;
-  text-shadow:
-    0 0 10px rgba(56,189,248,0.8),
-    0 0 25px rgba(14,165,233,0.5);
+  margin-bottom:20px;
 }
 
 .card{
-  background:
-    linear-gradient(
-      180deg,
-      rgba(10,25,47,0.95),
-      rgba(4,10,24,0.95)
-    );
-  border-radius:18px;
+  background:#071427;
+  border-radius:16px;
   padding:20px;
-  margin-bottom:25px;
-  border:1px solid rgba(56,189,248,0.3);
-  box-shadow:
-    0 0 15px rgba(56,189,248,0.15),
-    0 0 40px rgba(14,165,233,0.08),
-    inset 0 0 20px rgba(56,189,248,0.04);
+  margin-bottom:20px;
+  border:1px solid rgba(56,189,248,.25);
 }
 
 textarea{
   width:100%;
   height:320px;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(1,10,25,0.95),
-      rgba(1,5,15,0.98)
-    );
+  background:#020817;
   color:#dbeafe;
-  border:1px solid rgba(56,189,248,0.2);
-  padding:12px;
+  border:1px solid rgba(56,189,248,.2);
   border-radius:12px;
+  padding:12px;
   resize:none;
-  font-size:15px;
-  line-height:1.7;
-  font-family:Consolas,Menlo,monospace;
   box-sizing:border-box;
+  font-family:Consolas,monospace;
+  line-height:1.6;
 }
 
 button{
-  background:
-    linear-gradient(
-      180deg,
-      #38bdf8,
-      #0284c7
-    );
+  background:#0284c7;
   color:white;
-  padding:9px 16px;
-  border-radius:10px;
   border:none;
+  border-radius:10px;
+  padding:9px 16px;
   cursor:pointer;
-  font-weight:700;
-  margin-right:10px;
+  margin-right:8px;
   margin-bottom:8px;
+  font-weight:700;
 }
 
 .title{
   font-size:20px;
-  margin-bottom:12px;
+  margin-bottom:10px;
   color:#7dd3fc;
-  font-weight:700;
 }
 
 #status{
   font-size:12px;
   color:#93c5fd;
-  margin-top:8px;
 }
 
 </style>
@@ -122,7 +85,7 @@ button{
 
 <div id="container">
 
-<h1>地震情報（過去5回分）</h1>
+<h1>地震情報（過去5件）</h1>
 
 <div class="card">
 
@@ -130,7 +93,7 @@ button{
 <button onclick="manualRefresh()">今すぐ更新</button>
 <button onclick="enableAutoCopy()">自動コピー</button>
 
-<div id="status">更新待機中...</div>
+<div id="status">待機中...</div>
 
 </div>
 
@@ -147,11 +110,10 @@ button{
 let AUTO_COPY = false;
 let lastHash = "";
 
-let ws;
-
 let quakeMap = new Map();
 let quakeBuffer = [];
 
+let ws;
 let rendering = false;
 
 // ===============================
@@ -211,27 +173,28 @@ async function fetchTsunami(){
         "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml"
       );
 
-    const xmlText = await res.text();
+    const text =
+      await res.text();
 
-    if(xmlText.includes("大津波警報")){
+    if(text.includes("大津波警報")){
 
       return "〈⚠ 大津波警報〉\n現在大津波警報を発表中です";
 
     }
 
-    if(xmlText.includes("津波警報")){
+    if(text.includes("津波警報")){
 
       return "〈⚠ 津波警報〉\n現在津波警報を発表中です";
 
     }
 
-    if(xmlText.includes("津波注意報")){
+    if(text.includes("津波注意報")){
 
       return "〈津波注意報〉\n現在津波注意報を発表中です";
 
     }
 
-    if(xmlText.includes("津波予報")){
+    if(text.includes("津波予報")){
 
       return "〈津波予報〉\n現在津波予報を発表中です";
 
@@ -247,7 +210,7 @@ async function fetchTsunami(){
 }
 
 // ===============================
-// ID
+// 地震ID
 // ===============================
 
 function makeQuakeId(q){
@@ -266,13 +229,14 @@ function makeQuakeId(q){
 
 function buildIntensity(points){
 
-  if(!points || points.length === 0){
+  if(
+    !points ||
+    points.length === 0
+  ){
 
-    return "震度情報なし";
+    return "";
 
   }
-
-  points = points.slice(0,300);
 
   const grouped = {};
 
@@ -299,16 +263,20 @@ function buildIntensity(points){
 
     }
 
-    grouped[scale].push(
-      p.addr || p.city || p.pref || "不明"
-    );
+    const area =
+      p.addr ||
+      p.city ||
+      p.pref ||
+      "不明";
+
+    grouped[scale].push(area);
 
   });
 
   let out = "";
 
   Object.keys(grouped)
-  .reverse()
+  .sort((a,b)=>Number(b)-Number(a))
   .forEach(scale=>{
 
     out +=
@@ -340,14 +308,14 @@ function addQuake(q){
   const newPoints =
     (q.points || []).length;
 
+  const oldPoints =
+    (old?.points || []).length;
+
   const newMax =
     (q.points || []).reduce(
       (m,p)=>Math.max(m,p.scale||0),
       0
     );
-
-  const oldPoints =
-    (old?.points || []).length;
 
   const oldMax =
     (old?.points || []).reduce(
@@ -429,11 +397,39 @@ async function renderLogs(){
       const h =
         eq.hypocenter || {};
 
+      const fallbackQuake =
+        quakeBuffer.find(v => {
+
+          if(v === q) return false;
+
+          return (
+            v.earthquake?.time === eq.time &&
+            (v.points || []).length > 0
+          );
+
+        });
+
+      let usedPoints =
+        q.points || [];
+
+      if(
+        usedPoints.length === 0 &&
+        fallbackQuake
+      ){
+
+        usedPoints =
+          fallbackQuake.points || [];
+
+      }
+
       const maxRaw =
-        (q.points || []).reduce(
+        usedPoints.reduce(
           (m,p)=>Math.max(m,p.scale||0),
           0
         );
+
+      const intensityText =
+        buildIntensity(usedPoints);
 
       const scaleMap = {
         10:"1",
@@ -469,7 +465,29 @@ async function renderLogs(){
 
       }
 
-      const text =
+      const isShindoOnly =
+        !h.name ||
+        h.name === "不明" ||
+        h.magnitude == null ||
+        h.magnitude < 0 ||
+        h.depth == null ||
+        h.depth < 0;
+
+      let text = "";
+
+      if(isShindoOnly){
+
+        text =
+
+`【震度速報】
+${new Date(eq.time).getFullYear()}年${new Date(eq.time).getMonth()+1}月${new Date(eq.time).getDate()}日 ${new Date(eq.time).getHours()}時${String(new Date(eq.time).getMinutes()).padStart(2,"0")}分頃
+
+【震度${scaleMap[maxRaw] || "---"}】
+${intensityText}`;
+
+      }else{
+
+        text =
 
 `【地震情報】
 
@@ -487,13 +505,15 @@ ${tsunami}
 
 ■ 出典
 ・P2P地震情報API
-・気象庁
+・気象庁${intensityText ? `
 
 --------------------
 ■ 各地の震度
 --------------------
 
-${buildIntensity(q.points || [])}`;
+${intensityText}` : ""}`;
+
+      }
 
       if(i === 0){
 
@@ -502,14 +522,20 @@ ${buildIntensity(q.points || [])}`;
       }
 
       html +=
+
         "<div class='card'>" +
+
         "<div class='title'>" +
         (i+1) +
         "件目の地震</div>" +
-        "<button onclick='copyOne(this)'>コピー</button>" +
+
+        "<button onclick='copyOne(this)'>" +
+        "コピー</button>" +
+
         "<textarea readonly>" +
         text +
         "</textarea>" +
+
         "</div>";
 
       allText += text + "\n\n";
@@ -520,7 +546,7 @@ ${buildIntensity(q.points || [])}`;
       allText.trim();
 
     document.getElementById("logs")
-    .innerHTML = html;
+      .innerHTML = html;
 
     if(
       AUTO_COPY &&
@@ -530,7 +556,7 @@ ${buildIntensity(q.points || [])}`;
       lastHash = latestText;
 
       navigator.clipboard
-      .writeText(latestText);
+        .writeText(latestText);
 
     }
 
@@ -551,12 +577,6 @@ function connectWSP2P(){
     new WebSocket(
       "wss://api.p2pquake.net/v2/ws"
     );
-
-  ws.onopen = ()=>{
-
-    console.log("WS接続");
-
-  };
 
   ws.onmessage = (event)=>{
 
@@ -602,8 +622,6 @@ connectWSP2P();
 // ===============================
 
 async function fallbackREST(){
-
-  updateStatusOnly();
 
   try{
 
