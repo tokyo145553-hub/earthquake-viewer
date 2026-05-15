@@ -1,695 +1,75 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>地震情報ログ</title>
-
-<style>
-
-:root{
-  --bg:#020817;
-  --card:#071427;
-  --border:#1e3a5f;
-  --neon:#38bdf8;
-  --text:#e0f2fe;
-}
-
-body{
-  font-family:"Hiragino Sans","Segoe UI",sans-serif;
-  background:#020617;
-  color:var(--text);
-  margin:0;
-  padding:20px;
-}
-
-#container{
-  max-width:900px;
-  margin:auto;
-}
-
-h1{
-  color:#7dd3fc;
-  margin-bottom:20px;
-}
-
-.card{
-  background:#071427;
-  border-radius:16px;
-  padding:20px;
-  margin-bottom:20px;
-  border:1px solid rgba(56,189,248,.25);
-}
-
-textarea{
-  width:100%;
-  height:320px;
-  background:#020817;
-  color:#dbeafe;
-  border:1px solid rgba(56,189,248,.2);
-  border-radius:12px;
-  padding:12px;
-  resize:none;
-  box-sizing:border-box;
-  font-family:Consolas,monospace;
-  line-height:1.6;
-}
-
-button{
-  background:#0284c7;
-  color:white;
-  border:none;
-  border-radius:10px;
-  padding:9px 16px;
-  cursor:pointer;
-  margin-right:8px;
-  margin-bottom:8px;
-  font-weight:700;
-}
-
-.title{
-  font-size:20px;
-  margin-bottom:10px;
-  color:#7dd3fc;
-}
-
-#status{
-  font-size:12px;
-  color:#93c5fd;
-}
-
-</style>
-</head>
-
-<body>
-
-<div id="container">
-
-<h1>地震情報（過去5件）</h1>
-
-<div class="card">
-
-<button onclick="copyAll()">全件コピー</button>
-<button onclick="manualRefresh()">今すぐ更新</button>
-<button onclick="enableAutoCopy()">自動コピー</button>
-
-<div id="status">待機中...</div>
-
-</div>
-
-<div id="logs"></div>
-
-</div>
-
-<script>
-
-// ===============================
-// グローバル
-// ===============================
-
-let AUTO_COPY = false;
-let lastHash = "";
-
-let quakeMap = new Map();
-let quakeBuffer = [];
-
-let ws;
-let rendering = false;
-
-// ===============================
-// 時刻
-// ===============================
-
-function formatTimeOneLine(date){
-
-  const d = new Date(date);
-
-  return (
-    d.getFullYear()+"年"+
-    (d.getMonth()+1)+"月"+
-    d.getDate()+"日 "+
-    d.getHours()+"時"+
-    String(d.getMinutes()).padStart(2,"0")+"分"+
-    String(d.getSeconds()).padStart(2,"0")+"秒"
-  );
-}
-
-function formatTimeBlock(label,date){
-
-  const d = new Date(date);
-
-  return (
-    "■ "+label+"\n　"+
-    d.getFullYear()+"年"+
-    (d.getMonth()+1)+"月"+
-    d.getDate()+"日 "+
-    d.getHours()+"時"+
-    String(d.getMinutes()).padStart(2,"0")+"分"
-  );
-}
-
-// ===============================
-// ステータス
-// ===============================
-
-function updateStatusOnly(){
-
-  document.getElementById("status").innerText =
-    "最終更新: " +
-    formatTimeOneLine(new Date());
-
-}
-
-// ===============================
-// 津波
-// ===============================
-
-async function fetchTsunami(){
-
-  try{
-
-    const res =
-      await fetch(
-        "https://www.data.jma.go.jp/developer/xml/feed/eqvol.xml"
-      );
-
-    const text =
-      await res.text();
-
-    if(text.includes("大津波警報")){
-
-      return "〈⚠ 大津波警報〉\n現在大津波警報を発表中です";
-
-    }
-
-    if(text.includes("津波警報")){
-
-      return "〈⚠ 津波警報〉\n現在津波警報を発表中です";
-
-    }
-
-    if(text.includes("津波注意報")){
-
-      return "〈津波注意報〉\n現在津波注意報を発表中です";
-
-    }
-
-    if(text.includes("津波予報")){
-
-      return "〈津波予報〉\n現在津波予報を発表中です";
-
-    }
-
-    return "現在、津波に関する情報は発表されていません";
-
-  }catch(e){
-
-    return "津波情報取得失敗";
-
-  }
-}
-
-// ===============================
-// 地震ID
-// ===============================
-
-function makeQuakeId(q){
-
-  return (
-    q.id ||
-    q.earthquake?.time ||
-    Date.now().toString()
-  );
-
-}
-
-// ===============================
-// 震度
-// ===============================
-
-function buildIntensity(points){
-
-  if(
-    !points ||
-    points.length === 0
-  ){
-
-    return "";
-
-  }
-
-  const grouped = {};
-
-  const scaleMap = {
-    10:"1",
-    20:"2",
-    30:"3",
-    40:"4",
-    45:"5弱",
-    50:"5強",
-    55:"6弱",
-    60:"6強",
-    70:"7"
-  };
-
-  points.forEach(p=>{
-
-    const scale =
-      scaleMap[p.scale] || "?";
-
-    if(!grouped[scale]){
-
-      grouped[scale] = [];
-
-    }
-
-    const area =
-      p.addr ||
-      p.city ||
-      p.pref ||
-      "不明";
-
-    grouped[scale].push(area);
-
-  });
-
-  let out = "";
-
-  Object.keys(grouped)
-  .sort((a,b)=>Number(b)-Number(a))
-  .forEach(scale=>{
-
-    out +=
-      "【震度"+scale+"】\n";
-
-    out +=
-      grouped[scale].join("、");
-
-    out += "\n\n";
-
-  });
-
-  return out.trim();
-
-}
-
-// ===============================
-// 地震追加
-// ===============================
-
-function addQuake(q){
-
-  const id =
-    makeQuakeId(q);
-
-  const old =
-    quakeMap.get(id);
-
-  const newPoints =
-    (q.points || []).length;
-
-  const oldPoints =
-    (old?.points || []).length;
-
-  const newMax =
-    (q.points || []).reduce(
-      (m,p)=>Math.max(m,p.scale||0),
-      0
+function normalizeCityName(raw){
+
+  if (!raw) return "不明";
+
+  raw =
+    raw.replace(
+      /[０-９Ａ-Ｚａ-ｚ]/g,
+      s => String.fromCharCode(
+        s.charCodeAt(0) - 65248
+      )
     );
 
-  const oldMax =
-    (old?.points || []).reduce(
-      (m,p)=>Math.max(m,p.scale||0),
-      0
-    );
+  raw = raw.replace(/\s+/g, "");
+  raw = raw.replace(/（.*?）/g, "");
+  raw = raw.replace(/[-ー－]+$/g, "");
 
-  if(!old){
+  const specialCities = [
 
-    quakeMap.set(id,q);
+    "田村市","市川市","市原市",
+    "野々市市","四日市市","町田市",
+    "十日町市","大町市","山村市",
+    "村山市","東村山市","武蔵村山市",
+    "羽村市","大村市","余市町",
+    "市貝町","上市町","市川三郷町",
+    "市川町","下市町","大町町",
+    "村田町","玉村町","中村区"
 
-  }else{
+  ];
 
-    const shouldUpdate =
+  if(specialCities.includes(raw)){
 
-      newPoints > oldPoints ||
-      newMax > oldMax ||
-      JSON.stringify(q).length >
-      JSON.stringify(old).length;
+    return raw;
 
-    if(shouldUpdate){
-
-      quakeMap.set(id,q);
-
-    }else{
-
-      return false;
-
-    }
   }
 
-  quakeBuffer =
-    [...quakeMap.values()]
-    .sort((a,b)=>{
+  const posCity =
+    raw.indexOf("市");
 
-      return new Date(
-        b.earthquake?.time || 0
-      ) - new Date(
-        a.earthquake?.time || 0
-      );
+  if(posCity > 0){
 
-    })
-    .slice(0,5);
+    return raw.substring(0, posCity + 1);
 
-  renderLogs();
+  }
 
-  return true;
-}
+  const chars = [
+    "区",
+    "町",
+    "村"
+  ];
 
-// ===============================
-// 描画
-// ===============================
+  let cutPos = -1;
 
-async function renderLogs(){
+  for(const c of chars){
 
-  if(rendering) return;
-
-  rendering = true;
-
-  try{
-
-    updateStatusOnly();
-
-    const tsunami =
-      await fetchTsunami();
-
-    let html = "";
-    let allText = "";
-    let latestText = "";
-
-    for(let i=0;i<quakeBuffer.length;i++){
-
-      const q =
-        quakeBuffer[i];
-
-      const eq =
-        q.earthquake || {};
-
-      const h =
-        eq.hypocenter || {};
-
-      const fallbackQuake =
-        quakeBuffer.find(v => {
-
-          if(v === q) return false;
-
-          return (
-            v.earthquake?.time === eq.time &&
-            (v.points || []).length > 0
-          );
-
-        });
-
-      let usedPoints =
-        q.points || [];
-
-      if(
-        usedPoints.length === 0 &&
-        fallbackQuake
-      ){
-
-        usedPoints =
-          fallbackQuake.points || [];
-
-      }
-
-      const maxRaw =
-        usedPoints.reduce(
-          (m,p)=>Math.max(m,p.scale||0),
-          0
-        );
-
-      const intensityText =
-        buildIntensity(usedPoints);
-
-      const scaleMap = {
-        10:"1",
-        20:"2",
-        30:"3",
-        40:"4",
-        45:"5弱",
-        50:"5強",
-        55:"6弱",
-        60:"6強",
-        70:"7"
-      };
-
-      let depth = "不明";
-
-      if(h.depth === 0){
-
-        depth = "ごく浅い";
-
-      }
-      else if(h.depth != null){
-
-        depth = h.depth + "km";
-
-      }
-
-      let mag = "---";
-
-      if(typeof h.magnitude === "number"){
-
-        mag =
-          h.magnitude.toFixed(1);
-
-      }
-
-      const isShindoOnly =
-        !h.name ||
-        h.name === "不明" ||
-        h.magnitude == null ||
-        h.magnitude < 0 ||
-        h.depth == null ||
-        h.depth < 0;
-
-      let text = "";
-
-      if(isShindoOnly){
-
-        text =
-
-`【震度速報】
-${new Date(eq.time).getFullYear()}年${new Date(eq.time).getMonth()+1}月${new Date(eq.time).getDate()}日 ${new Date(eq.time).getHours()}時${String(new Date(eq.time).getMinutes()).padStart(2,"0")}分頃
-
-【震度${scaleMap[maxRaw] || "---"}】
-${intensityText}`;
-
-      }else{
-
-        text =
-
-`【地震情報】
-
-■ 最大震度：${scaleMap[maxRaw] || "---"}
-■ マグニチュード：M${mag}
-■ 震源地：${h.name || "不明"}
-■ 深さ：${depth}
-
-${formatTimeBlock("発生時刻",eq.time)}
-
-${formatTimeBlock("配信時刻",new Date())}
-
-■ 津波情報
-${tsunami}
-
-■ 出典
-・P2P地震情報API
-・気象庁${intensityText ? `
-
---------------------
-■ 各地の震度
---------------------
-
-${intensityText}` : ""}`;
-
-      }
-
-      if(i === 0){
-
-        latestText = text;
-
-      }
-
-      html +=
-
-        "<div class='card'>" +
-
-        "<div class='title'>" +
-        (i+1) +
-        "件目の地震</div>" +
-
-        "<button onclick='copyOne(this)'>" +
-        "コピー</button>" +
-
-        "<textarea readonly>" +
-        text +
-        "</textarea>" +
-
-        "</div>";
-
-      allText += text + "\n\n";
-
-    }
-
-    window.ALL_LOGS =
-      allText.trim();
-
-    document.getElementById("logs")
-      .innerHTML = html;
+    const pos =
+      raw.indexOf(c);
 
     if(
-      AUTO_COPY &&
-      latestText !== lastHash
+      pos > 0 &&
+      (cutPos === -1 || pos < cutPos)
     ){
 
-      lastHash = latestText;
-
-      navigator.clipboard
-        .writeText(latestText);
+      cutPos = pos;
 
     }
+  }
 
-  }finally{
+  if(cutPos > 0){
 
-    rendering = false;
+    return raw.substring(0, cutPos + 1);
 
   }
+
+  return raw;
 }
-
-// ===============================
-// WS
-// ===============================
-
-function connectWSP2P(){
-
-  ws =
-    new WebSocket(
-      "wss://api.p2pquake.net/v2/ws"
-    );
-
-  ws.onmessage = (event)=>{
-
-    try{
-
-      const data =
-        JSON.parse(event.data);
-
-      if(data.code === 551){
-
-        addQuake(data);
-
-      }
-
-    }catch(e){
-
-      console.error(e);
-
-    }
-
-  };
-
-  ws.onclose = ()=>{
-
-    setTimeout(
-      connectWSP2P,
-      3000
-    );
-
-  };
-
-  ws.onerror = ()=>{
-
-    ws.close();
-
-  };
-}
-
-connectWSP2P();
-
-// ===============================
-// REST
-// ===============================
-
-async function fallbackREST(){
-
-  try{
-
-    const res =
-      await fetch(
-        "https://api.p2pquake.net/v2/history?codes=551&limit=10"
-      );
-
-    const data =
-      await res.json();
-
-    data.forEach(q=>{
-
-      addQuake(q);
-
-    });
-
-  }catch(e){
-
-    console.error(e);
-
-  }
-}
-
-fallbackREST();
-
-setInterval(
-  fallbackREST,
-  3000
-);
-
-// ===============================
-// コピー
-// ===============================
-
-function copyOne(btn){
-
-  navigator.clipboard.writeText(
-
-    btn.parentElement
-    .querySelector("textarea")
-    .value
-
-  );
-
-}
-
-function copyAll(){
-
-  navigator.clipboard.writeText(
-    window.ALL_LOGS || ""
-  );
-
-}
-
-function enableAutoCopy(){
-
-  AUTO_COPY = true;
-
-}
-
-function manualRefresh(){
-
-  renderLogs();
-
-}
-
-</script>
-
-</body>
-</html>
