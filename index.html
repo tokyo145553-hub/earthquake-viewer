@@ -259,17 +259,6 @@ let quakeBuffer = [];
 let latestIds = new Set();
 
 // ===============================
-// HTMLエスケープ追加
-// ===============================
-function escapeHtml(str){
-
-  return String(str || "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;");
-}
-
-// ===============================
 // ステータス更新
 // ===============================
 function updateStatusOnly(){
@@ -501,8 +490,8 @@ function addQuake(q){
   }catch(e){
 
     console.error(e);
-    return false;
 
+    return false;
   }
 }
 
@@ -766,21 +755,12 @@ function buildIntensity(points){
 
   try{
 
-    if(
-      !Array.isArray(points) ||
-      points.length === 0
-    ){
-
-      return "震度情報なし";
-    }
-
     const cityMax = {};
 
     points.forEach(p => {
 
-      // ===== 修正ここ =====
+      // 修正
       if(!p) return;
-      // ===================
 
       const pref =
         normalizePref(
@@ -798,10 +778,9 @@ function buildIntensity(points){
           "不明"
         );
 
-      // ===== 修正ここ =====
+      // 修正
       const scale =
         Number(p.scale || 0);
-      // ===================
 
       const key =
         pref + ":" + city;
@@ -890,9 +869,7 @@ function buildIntensity(points){
       });
     });
 
-    // ===== 修正ここ =====
     return out.trimEnd() || "震度情報なし";
-    // ===================
 
   }catch(e){
 
@@ -910,9 +887,7 @@ function buildIntensity(points){
 // ===============================
 async function renderLogs(){
 
-  // ===== 修正ここ =====
   try{
-  // ===================
 
   updateStatusOnly();
 
@@ -957,6 +932,7 @@ async function renderLogs(){
 
     }
 
+    // 修正
     const maxRaw =
       (q.points || []).reduce(
         (m,p)=>
@@ -1055,9 +1031,7 @@ intensity;
 
       "<textarea readonly>" +
 
-      // ===== 修正ここ =====
-      escapeHtml(text) +
-      // ===================
+      text +
 
       "</textarea>" +
 
@@ -1084,7 +1058,6 @@ intensity;
 
   }
 
-  // ===== 修正ここ =====
   }catch(e){
 
     console.error(
@@ -1093,7 +1066,6 @@ intensity;
     );
 
   }
-  // ===================
 }
 
 // ===============================
